@@ -109,21 +109,52 @@ impl Expr {
                     }
                     
                     Expr::Mul(v) => {
-                        let a = v[0].clone();
-                        if v.get(1).is_none() {
-                            return a.simplify();
+                        let mut simplified_factors = Vec::new();
+                        let mut constant = Rational::new(1, 1);
+                        
+                        // First pass: simplify all factors and collect constants
+                        for factor in v {
+                            let simplified = factor.simplify();
+                            match simplified {
+                                Expr::Number(n) => constant = constant * n,
+                                Expr::Mul(nested_factors) => {
+                                    // Flatten nested multiplication
+                                    for f in nested_factors {
+                                        simplified_factors.push(f);
+                                    }
+                                }
+                                _ => simplified_factors.push(simplified),
+                            }
                         }
-                        let b = v[1].clone();
-                        let a = a.simplify();
-                        let b = b.simplify();
-                        match (a, b) {
-                            (Expr::Number(x), Expr::Number(y)) => Expr::Number(x * y),
-                            (Expr::Number(n), x) | (x, Expr::Number(n)) => match n.numerator {
-                                0 => Expr::Number(Rational::new(0, 1)),
-                                1 => x,
-                                _ => Expr::Mul(vec![Expr::Number(n), x]),
-                            },
-                            (a, b) => Expr::Mul(vec![a, b]),
+                        
+                        // Add the combined constant if it's not 1
+                        if constant != Rational::new(1, 1) {
+                            simplified_factors.insert(0, Expr::Number(constant));
+                        }
+                        
+                        // Second pass: combine like terms (x * x → x^2)
+                        let mut combined_factors: HashMap<Expr, i64> = HashMap::new();
+                        for factor in simplified_factors {
+                            *combined_factors.entry(factor).or_insert(0) += 1;
+                        }
+                        
+                        // Rebuild the factors
+                        let mut new_factors = Vec::new();
+                        for (base, count) in combined_factors {
+                            if count == 1 {
+                                new_factors.push(base);
+                            } else {
+                                new_factors.push(Expr::Pow(
+                                    Box::new(base),
+                                    Box::new(Expr::Number(Rational::new(count, 1)))
+                                ));
+                            }
+                        }
+                        
+                        match new_factors.len() {
+                            0 => Expr::Number(Rational::new(1, 1)), // Empty product is 1
+                            1 => new_factors.into_iter().next().unwrap(),
+                            _ => Expr::Mul(new_factors)
                         }
                     }
                     
