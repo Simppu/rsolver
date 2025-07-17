@@ -1,4 +1,4 @@
-use std::{ops::{Add, Div, Mul, Neg, Sub}, str::Chars};
+use std::{fmt::Display, ops::{Add, Div, Mul, Neg, Sub}, str::Chars};
 
 
 #[derive(Debug, PartialEq, Clone)]
@@ -35,6 +35,16 @@ pub struct Rational {
 impl Default for Rational {
     fn default() -> Self {
         Self { numerator: 0, denominator: 1 }
+    }
+}
+
+impl Display for Rational {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.denominator == 1 {
+            write!(f, "{}", self.numerator)
+        } else {
+            write!(f, "{}/{}", self.numerator, self.denominator)
+        }
     }
 }
 

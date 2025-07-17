@@ -9,7 +9,7 @@ use rsolver::Expr;
 
 fn main() {
     // Example usage:
-    let i = "a+b+a";
+    let i = "(a + b)^2";
     let mut to = Tokenizer::new(i);
 
     let r = to.tokenize();

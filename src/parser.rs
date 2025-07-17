@@ -108,21 +108,19 @@ impl Parser{
         
         while let Some(token) = &self.current {
             match token {
-                Token::Star | Token::Slash => {
-                    let op = token.clone();
+                Token::Star => {
                     self.advance();
-                    let mut right = self.parse_exponent()?;
-                    
-                    if op == Token::Slash {
-                        right = vec![Expr::Div(
-                            Box::new(Expr::Mul(right)),
-                            Box::new(Expr::Mul(left)),
-                        )];
-                        left = right;
-                        break;
+                    left.extend(self.parse_exponent()?);
+                }
+                Token::Slash => {
+                    self.advance();
+                    let right = self.parse_exponent()?;
+                    // Handle division by converting to multiplication by reciprocal
+                    if right.len() == 1 {
+                        left = vec![Expr::Mul(left).div(right[0].clone())];
+                    } else {
+                        left = vec![Expr::Mul(left).div(Expr::Mul(right))];
                     }
-                    
-                    left.extend(right);
                 }
                 _ => break,
             }

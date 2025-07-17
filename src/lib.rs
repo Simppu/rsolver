@@ -20,6 +20,16 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn div(self, denominator: Expr) -> Expr {
+        Expr::Div(Box::new(self), Box::new(denominator))
+    }
+
+    pub fn mult(self, factors: Vec<Expr>) -> Expr {
+        let mut v = vec![self];
+        v.append(&mut factors.clone());
+        Expr::Mul(v)
+    }
+
     pub fn simplify(self) -> Expr {
         match self {
             Expr::Add(terms) => {
@@ -100,6 +110,9 @@ impl Expr {
                     
                     Expr::Mul(v) => {
                         let a = v[0].clone();
+                        if v.get(1).is_none() {
+                            return a.simplify();
+                        }
                         let b = v[1].clone();
                         let a = a.simplify();
                         let b = b.simplify();
@@ -117,16 +130,27 @@ impl Expr {
                     Expr::Div(a, b) => {
                         let a = a.simplify();
                         let b = b.simplify();
+                        
                         match (a, b) {
-                            (Expr::Number(x), Expr::Number(y)) => {
+                            // Number division
+                            (Expr::Number(num), Expr::Number(den)) => {
                                 Expr::Number(Rational::new(
-                                    x.numerator * y.denominator,
-                                    x.denominator * y.numerator,
+                                    num.numerator * den.denominator,
+                                    num.denominator * den.numerator,
                                 ))
-                            }
-                            (a, Expr::Number(n)) if n.numerator == 1 => {
-                                Expr::Mul(vec![a, Expr::Number(Rational::new(n.denominator, 1))])
-                            }
+                            },
+                            
+                            // x / 1 → x
+                            (expr, Expr::Number(den)) if den == Rational::new(1, 1) => expr,
+                            
+                            // (a * b) / c → a * (b / c)
+                            (Expr::Mul(factors), denom) => {
+                                let last = factors.last().unwrap().clone();
+                                let rest = factors[..factors.len()-1].to_vec();
+                                Expr::Mul(rest).mult(vec![last.div(denom)])
+                            },
+                            
+                            // Default case
                             (a, b) => Expr::Div(Box::new(a), Box::new(b)),
                         }
                     }
@@ -230,3 +254,83 @@ pub fn add(left: u64, right: u64) -> u64 {
 }
 
 
+use std::fmt;
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Expr::Number(r) => write!(f, "{}", r),
+            Expr::Symbol(s) => write!(f, "{}", s),
+            
+            Expr::Add(terms) => {
+                let mut first = true;
+                for term in terms {
+                    let needs_paren = matches!(term, Expr::Sub(..) | Expr::Neg(..));
+                    write!(f, "{}{}", 
+                        if first { "" } else { " + " }, 
+                        if needs_paren { format!("({})", term) } else { format!("{}", term) }
+                    )?;
+                    first = false;
+                }
+                Ok(())
+            },
+            
+            Expr::Neg(expr) => write!(f, "-{}", 
+                if expr.needs_paren() { format!("({})", expr) } else { format!("{}", expr) }
+            ),
+            
+            Expr::Sub(a, b) => write!(f, "{} - {}", 
+                if a.needs_paren() { format!("({})", a) } else { format!("{}", a) },
+                if b.needs_paren() { format!("({})", b) } else { format!("{}", b) }
+            ),
+            
+            Expr::Mul(factors) => {
+                let mut first = true;
+                for factor in factors {
+                    write!(f, "{}{}", 
+                        if first { "" } else { " * " },
+                        if factor.needs_paren_mul() { format!("({})", factor) } else { format!("{}", factor) }
+                    )?;
+                    first = false;
+                }
+                Ok(())
+            },
+            
+            Expr::Div(a, b) => write!(f, "{}/{}", 
+                if a.needs_paren_div() { format!("({})", a) } else { format!("{}", a) },
+                if b.needs_paren_div() { format!("({})", b) } else { format!("{}", b) }
+            ),
+            
+            Expr::Pow(a, b) => write!(f, "{}^{}", 
+                if a.needs_paren_pow() { format!("({})", a) } else { format!("{}", a) },
+                if b.needs_paren_pow() { format!("({})", b) } else { format!("{}", b) }
+            ),
+        }
+    }
+}
+
+// Helper trait for parenthesis decisions
+trait NeedsParen {
+    fn needs_paren(&self) -> bool;
+    fn needs_paren_mul(&self) -> bool;
+    fn needs_paren_div(&self) -> bool;
+    fn needs_paren_pow(&self) -> bool;
+}
+
+impl NeedsParen for Expr {
+    fn needs_paren(&self) -> bool {
+        matches!(self, Expr::Add(_) | Expr::Sub(..) | Expr::Neg(_))
+    }
+    
+    fn needs_paren_mul(&self) -> bool {
+        matches!(self, Expr::Add(_) | Expr::Sub(..) | Expr::Div(..))
+    }
+    
+    fn needs_paren_div(&self) -> bool {
+        matches!(self, Expr::Add(_) | Expr::Sub(..) | Expr::Mul(_) | Expr::Div(..))
+    }
+    
+    fn needs_paren_pow(&self) -> bool {
+        matches!(self, Expr::Add(_) | Expr::Sub(..) | Expr::Mul(_) | Expr::Div(..) | Expr::Pow(..))
+    }
+}
