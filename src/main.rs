@@ -8,7 +8,7 @@ use rsolver::Expr;
 
 
 fn main() {
-    
+    // Example usage:
     let i = "a+b+a";
     let mut to = Tokenizer::new(i);
 
