@@ -71,10 +71,15 @@ impl Parser{
 
 impl Parser{
     pub fn parse_expression(&mut self) -> Result<Expr, String> {
-        self.parse_additive()
+        let terms = self.parse_additive()?;
+        Ok(if terms.len() == 1 {
+            terms.into_iter().next().unwrap()
+        } else {
+            Expr::Add(terms)
+        })
     }
 
-    fn parse_additive(&mut self) -> Result<Expr, String> {
+    fn parse_additive(&mut self) -> Result<Vec<Expr>, String> {
         let mut left = self.parse_multiplicative()?;
         
         while let Some(token) = &self.current {
@@ -82,12 +87,15 @@ impl Parser{
                 Token::Plus | Token::Minus => {
                     let op = token.clone();
                     self.advance();
-                    let right = self.parse_multiplicative()?;
-                    left = match op {
-                        Token::Plus => Expr::Add(Box::new(left), Box::new(right)),
-                        Token::Minus => Expr::Sub(Box::new(left), Box::new(right)),
-                        _ => unreachable!(),
-                    };
+                    let mut right = self.parse_multiplicative()?;
+                    
+                    if op == Token::Minus {
+                        right = right.into_iter()
+                            .map(|expr| Expr::Neg(Box::new(expr)))
+                            .collect();
+                    }
+                    
+                    left.extend(right);
                 }
                 _ => break,
             }
@@ -95,7 +103,7 @@ impl Parser{
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<Expr, String> {
+    fn parse_multiplicative(&mut self) -> Result<Vec<Expr>, String> {
         let mut left = self.parse_exponent()?;
         
         while let Some(token) = &self.current {
@@ -103,12 +111,18 @@ impl Parser{
                 Token::Star | Token::Slash => {
                     let op = token.clone();
                     self.advance();
-                    let right = self.parse_exponent()?;
-                    left = match op {
-                        Token::Star => Expr::Mul(Box::new(left), Box::new(right)),
-                        Token::Slash => Expr::Div(Box::new(left), Box::new(right)),
-                        _ => unreachable!(),
-                    };
+                    let mut right = self.parse_exponent()?;
+                    
+                    if op == Token::Slash {
+                        right = vec![Expr::Div(
+                            Box::new(Expr::Mul(right)),
+                            Box::new(Expr::Mul(left)),
+                        )];
+                        left = right;
+                        break;
+                    }
+                    
+                    left.extend(right);
                 }
                 _ => break,
             }
@@ -116,36 +130,43 @@ impl Parser{
         Ok(left)
     }
 
-    fn parse_exponent(&mut self) -> Result<Expr, String> {
-        let mut left = self.parse_primary()?;
+
+    fn parse_exponent(&mut self) -> Result<Vec<Expr>, String> {
+        let mut factors = self.parse_primary()?;
         
         while let Some(Token::Caret) = &self.current {
             self.advance();
-            let right = self.parse_primary()?;
-            left = Expr::Pow(Box::new(left), Box::new(right));
+            let exponent = self.parse_primary()?;
+            factors = vec![Expr::Pow(
+                Box::new(Expr::Mul(factors)),
+                Box::new(Expr::Mul(exponent)),
+            )];
         }
-        Ok(left)
+        Ok(factors)
     }
 
-    pub fn parse_primary(&mut self) -> Result<Expr, String> {
+    fn parse_primary(&mut self) -> Result<Vec<Expr>, String> {
         match self.current.take() {
             Some(Token::Number(n)) => {
                 self.advance();
-                Ok(Expr::Number(n))
+                Ok(vec![Expr::Number(n)])
             }
             Some(Token::Symbol(s)) => {
                 self.advance();
-                Ok(Expr::Symbol(s))
+                Ok(vec![Expr::Symbol(s)])
             }
             Some(Token::LParen) => {
                 self.advance();
                 let expr = self.parse_expression()?;
                 self.consume(Token::RParen)?;
-                Ok(expr)
+                Ok(vec![expr])
             }
             Some(Token::Minus) => {
                 self.advance();
-                Ok(Expr::Neg(Box::new(self.parse_primary()?)))
+                Ok(self.parse_primary()?
+                    .into_iter()
+                    .map(|expr| Expr::Neg(Box::new(expr)))
+                    .collect())
             }
             Some(t) => Err(format!("Unexpected token: {:?}", t)),
             None => Err("Unexpected end of input".into()),

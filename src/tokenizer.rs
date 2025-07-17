@@ -25,11 +25,19 @@ pub enum Base {
     Custom(i64)
 }
 
-#[derive(Debug, Clone)]
+#[allow(clippy::derived_hash_with_manual_eq)]
+#[derive(Debug, Clone, Hash, Eq)]
 pub struct Rational {
     pub numerator: i64,
     pub denominator: i64, // Always positive
 }
+
+impl Default for Rational {
+    fn default() -> Self {
+        Self { numerator: 0, denominator: 1 }
+    }
+}
+
 
 impl Rational {
     pub fn new(n: i64, d: i64) -> Self {
