@@ -79,15 +79,16 @@ impl Parser{
         
         while let Some(token) = &self.current {
             match token {
-                Token::Plus => {
+                Token::Plus | Token::Minus => {
+                    let op = token.clone();
                     self.advance();
                     let right = self.parse_multiplicative()?;
-                    left = Expr::Add(vec![left, right]);
-                }
-                Token::Minus => {
-                    self.advance();
-                    let right = self.parse_multiplicative()?;
-                    left = Expr::Sub(Box::new(left), Box::new(right));
+                    
+                    left = match op {
+                        Token::Plus => Expr::Add(vec![left, right]),
+                        Token::Minus => Expr::Sub(Box::new(left), Box::new(right)),
+                        _ => unreachable!(),
+                    };
                 }
                 _ => break,
             }

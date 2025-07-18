@@ -19,9 +19,273 @@ pub enum Expr {
     Neg(Box<Expr>)
 }
 
+pub fn evaluate_expr(expr: Expr) -> Expr {
+    match &expr {
+        Expr::Number(rational) => Expr::Number(rational.clone()),
+        Expr::Symbol(s) => Expr::Symbol(s.clone()),
+        Expr::Add(exprs) => {
+            
+            let mut symbol_count = 0;
+            let mut sum = Rational::new(0, 1);
+            let mut other_terms = Vec::new();
+            for n in exprs.clone() {
+                if let Expr::Symbol(_) = n {
+                    symbol_count += 1;
+                }
+                if let Expr::Number(r) = n {
+                    sum = sum + r;
+                } else {
+                    other_terms.push(evaluate_expr(n));
+                }
+            }
+            
+            let mut a = vec![Expr::Number(sum.clone())];
+            a.append(&mut other_terms);
+
+            
+
+            if exprs.len() - 1 == symbol_count {
+                if sum.numerator == 0 { 
+                    return Expr::Add(other_terms);
+                }
+                return Expr::Add(a);
+            }
+            
+            evaluate_expr(Expr::Add(a))
+
+        },
+        Expr::Sub(expr, expr1) => {
+            
+            match (*expr.clone(), *expr1.clone()) {
+                (Expr::Number(n), Expr::Number(r)) => {
+                    Expr::Number(n - r)
+                },
+                _=> {
+                    Expr::Sub(Box::new(evaluate_expr(*expr.clone())), Box::new(evaluate_expr(*expr1.clone())))
+                }
+            }
+
+        },
+        Expr::Mul(exprs) => {
+            let mut symbol_count = 0;
+            let mut res = Rational::new(1, 1);
+            let mut others = Vec::new();
+            for n in exprs.clone() {
+                if let Expr::Symbol(_) = n {
+                    symbol_count += 1;
+                }
+                if let Expr::Number(m) = n {
+                    res = res * m;
+                } else {
+                    others.push(n.clone());
+                }
+            }
+            let mut res1 = vec![Expr::Number(res)];
+            res1.append(&mut others);
+            if exprs.len() - 1 == symbol_count {
+                return Expr::Mul(res1);
+            }
+            evaluate_expr(Expr::Mul(res1))
+
+        },
+        Expr::Div(expr, expr1) => {
+            match (*expr.clone(), *expr1.clone()) {
+                (Expr::Number(n), Expr::Number(r)) => {
+                    Expr::Number(n / r)
+                },
+                _=> {
+                    Expr::Div(Box::new(evaluate_expr(*expr.clone())), Box::new(evaluate_expr(*expr1.clone())))
+                }
+            }
+        },
+        Expr::Pow(expr, expr1) => {
+            todo!()
+        },
+        Expr::Neg(expr) => {
+            match *expr.clone() {
+                Expr::Number(n) => {
+                    Expr::Number(-n)
+                },
+                _=> {
+                    Expr::Neg(Box::new(evaluate_expr(*expr.clone())))
+                }
+            }
+        }
+    }
+}
+pub fn evaluate_expr1(expr: Expr) -> Expr {
+    match expr {
+        Expr::Number(rational) => Expr::Number(rational),
+        Expr::Symbol(s) => Expr::Symbol(s),
+        Expr::Add(exprs) => {
+            let mut sum = Rational::new(0, 1);
+            let mut symbols = HashMap::new();
+            let mut other_terms = Vec::new();
+            
+            for expr in exprs {
+                match evaluate_expr(expr) {
+                    Expr::Number(r) => sum = sum + r,
+                    Expr::Symbol(s) => {
+                        *symbols.entry(s).or_insert(0) += 1;
+                    },
+                    Expr::Mul(factors) => {
+                        // Handle coefficients like 2x, 3y, etc.
+                        if let (coeff, symbol) = extract_coefficient(factors.clone()) {
+                            if let Expr::Symbol(symbol) = symbol {
+                                *symbols.entry(symbol).or_insert(0) += coeff.numerator;
+                            }
+                            
+                        } else {
+                            other_terms.push(Expr::Mul(factors));
+                        }
+                    },
+                    other => other_terms.push(other),
+                }
+            }
+            
+            // Build the final expression
+            let mut terms = Vec::new();
+            
+            // Add the constant term if non-zero
+            if sum != Rational::new(0, 1) {
+                terms.push(Expr::Number(sum));
+            }
+            
+            // Add the symbols with their counts
+            for (symbol, count) in symbols {
+                match count {
+                    1 => terms.push(Expr::Symbol(symbol)),
+                    _ => terms.push(Expr::Mul(vec![
+                        Expr::Number(Rational::new(count, 1)),
+                        Expr::Symbol(symbol)
+                    ])),
+                }
+            }
+            
+            // Add other terms
+            terms.extend(other_terms);
+            
+            match terms.len() {
+                0 => Expr::Number(Rational::new(0, 1)),
+                1 => terms.into_iter().next().unwrap(),
+                _ => Expr::Add(terms),
+            }
+        },
+        Expr::Sub(a, b) => {
+            let a_simpl = evaluate_expr(*a);
+            let b_simpl = evaluate_expr(*b);
+            
+            match (a_simpl, b_simpl) {
+                (Expr::Number(n1), Expr::Number(n2)) => Expr::Number(n1 - n2),
+                (a, Expr::Number(n)) if n == Rational::new(0, 1) => a,
+                (Expr::Add(terms), b) => {
+                    // Distribute subtraction: (a + b + c) - d → a + b + c - d
+                    let mut new_terms = terms;
+                    new_terms.push(Expr::Neg(Box::new(b)));
+                    evaluate_expr(Expr::Add(new_terms))
+                },
+                (a, b) => Expr::Sub(Box::new(a), Box::new(b)),
+            }
+        },
+        Expr::Mul(exprs) => {
+            let mut product = Rational::new(1, 1);
+            let mut symbols = HashMap::new();
+            let mut other_factors = Vec::new();
+            
+            for expr in exprs {
+                match evaluate_expr(expr) {
+                    Expr::Number(r) => product = product * r,
+                    Expr::Symbol(s) => {
+                        *symbols.entry(s).or_insert(0) += 1;
+                    },
+                    Expr::Pow(base, exp) => {
+                        if let Expr::Symbol(s) = *base {
+                            if let Expr::Number(n) = *exp {
+                                *symbols.entry(s).or_insert(0) += n.numerator;
+                            }
+                            
+                        } else {
+                            other_factors.push(Expr::Pow(base, exp));
+                        }
+                    },
+                    other => other_factors.push(other),
+                }
+            }
+            
+            // Build the final expression
+            let mut factors = Vec::new();
+            
+            // Add the constant factor if not 1
+            if product != Rational::new(1, 1) {
+                factors.push(Expr::Number(product));
+            }
+            
+            // Add the symbols with their exponents
+            for (symbol, exp) in symbols {
+                match exp {
+                    1 => factors.push(Expr::Symbol(symbol)),
+                    _ => factors.push(Expr::Pow(
+                        Box::new(Expr::Symbol(symbol)),
+                        Box::new(Expr::Number(Rational::new(exp, 1))),
+                    )),
+                }
+            }
+            
+            // Add other factors
+            factors.extend(other_factors);
+            
+            match factors.len() {
+                0 => Expr::Number(Rational::new(1, 1)),
+                1 => factors.into_iter().next().unwrap(),
+                _ => Expr::Mul(factors),
+            }
+        },
+        Expr::Div(a, b) => {
+            let a_simpl = evaluate_expr(*a);
+            let b_simpl = evaluate_expr(*b);
+            
+            match (a_simpl, b_simpl) {
+                (Expr::Number(n), Expr::Number(m)) => Expr::Number(n / m),
+                (a, Expr::Number(n)) if n == Rational::new(1, 1) => a,
+                (a, b) => Expr::Div(Box::new(a), Box::new(b)),
+            }
+        },
+        Expr::Pow(a, b) => {
+            todo!();
+            //let a_simpl = evaluate_expr(*a);
+            //let b_simpl = evaluate_expr(*b);
+            //
+            //match (a_simpl, b_simpl) {
+            //    (Expr::Number(n), Expr::Number(m)) => Expr::Number(n.pow(m.numerator())),
+            //    (a, Expr::Number(n)) if n == Rational::new(1, 1) => a,
+            //    (a, b) => Expr::Pow(Box::new(a), Box::new(b)),
+            //}
+        },
+        Expr::Neg(a) => {
+            match evaluate_expr(*a) {
+                Expr::Number(n) => Expr::Number(-n),
+                a_simpl => Expr::Neg(Box::new(a_simpl)),
+            }
+        },
+        // Remove Expr::Res variant as it's not needed
+    }
+}
+
+
 impl Expr {
     pub fn div(self, denominator: Expr) -> Expr {
-        Expr::Div(Box::new(self), Box::new(denominator))
+        match (&self, &denominator) {
+            (Expr::Symbol(n), Expr::Symbol(n1)) => {
+                if n == n1 {
+                    Expr::Number(Rational { numerator: 1, denominator: 1 })
+                } else {
+                    Expr::Div(Box::new(self), Box::new(denominator))
+                }
+            }
+
+            _=> {Expr::Div(Box::new(self), Box::new(denominator))}
+        }
+        
     }
 
     pub fn mult(self, factors: Vec<Expr>) -> Expr {
@@ -84,29 +348,16 @@ impl Expr {
                             };
                             new_terms.push(term);
                         }
-                
+                        
+                        
+
                         match new_terms.len() {
                             0 => Expr::Number(Rational::new(0, 1)),
                             1 => new_terms.into_iter().next().unwrap(),
                             _ => Expr::Add(new_terms)
                         }
                     },
-                    Expr::Add(v) => {
-                        let a = v[0].clone();
-                        let b = v[1].clone();
-
-                        let a = a.simplify();
-                        let b = b.simplify();
-                        match (a, b) {
-                            (Expr::Number(x), Expr::Number(y)) => Expr::Number(x + y),
-                            (Expr::Number(n), x) | (x, Expr::Number(n)) if n.numerator == 0 => x,
-                            (a, b) => Expr::Add(vec![a, b]),
-                        }
-                    }
                     
-                    Expr::Sub(a, b) => {
-                        Expr::Add(vec![a.simplify(), Expr::Neg(Box::new(b.simplify())).simplify()])
-                    }
                     
                     Expr::Mul(v) => {
                         let mut simplified_factors = Vec::new();
@@ -158,32 +409,37 @@ impl Expr {
                         }
                     }
                     
-                    Expr::Div(a, b) => {
-                        let a = a.simplify();
-                        let b = b.simplify();
-                        
-                        match (a, b) {
-                            // Number division
-                            (Expr::Number(num), Expr::Number(den)) => {
-                                Expr::Number(Rational::new(
-                                    num.numerator * den.denominator,
-                                    num.denominator * den.numerator,
-                                ))
-                            },
-                            
-                            // x / 1 → x
-                            (expr, Expr::Number(den)) if den == Rational::new(1, 1) => expr,
-                            
-                            // (a * b) / c → a * (b / c)
-                            (Expr::Mul(factors), denom) => {
-                                let last = factors.last().unwrap().clone();
-                                let rest = factors[..factors.len()-1].to_vec();
-                                Expr::Mul(rest).mult(vec![last.div(denom)])
-                            },
-                            
-                            // Default case
-                            (a, b) => Expr::Div(Box::new(a), Box::new(b)),
+                    Expr::Div(numerator, denominator) => {
+                        let num = numerator.simplify();
+                        let den = denominator.simplify();
+        
+                        // Case 1: a/a → 1
+                        if num == den {
+                            return Expr::Number(Rational::new(1, 1));
                         }
+        
+                        // Case 2: (a*b)/a → b
+                        if let Expr::Mul(factors) = num.clone() {
+                            if let Some(pos) = factors.iter().position(|f| f == &den) {
+                                let mut new_factors = factors.clone();
+                                new_factors.remove(pos);
+                                return if new_factors.is_empty() {
+                                    Expr::Number(Rational::new(1, 1))
+                                } else if new_factors.len() == 1 {
+                                    new_factors.into_iter().next().unwrap()
+                                } else {
+                                    Expr::Mul(new_factors)
+                                };
+                            }
+                        }
+        
+                        // Case 3: (a/b)/c → a/(b*c)
+                        if let Expr::Div(n, d) = num {
+                            return Expr::Div(n, Box::new(Expr::Mul(vec![*d, den])));
+                        }
+        
+                        // Default case
+                        Expr::Div(Box::new(num), Box::new(den))
                     }
                     
                     Expr::Neg(a) => {
@@ -296,7 +552,7 @@ impl fmt::Display for Expr {
             Expr::Add(terms) => {
                 let mut first = true;
                 for term in terms {
-                    let needs_paren = matches!(term, Expr::Sub(..) | Expr::Neg(..));
+                    let needs_paren = false;
                     write!(f, "{}{}", 
                         if first { "" } else { " + " }, 
                         if needs_paren { format!("({})", term) } else { format!("{}", term) }

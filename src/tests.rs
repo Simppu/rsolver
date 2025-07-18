@@ -1,4 +1,6 @@
-use crate::tokenizer::{Rational, Token, Tokenizer};
+#[cfg(test)]
+use crate::Expr;
+use crate::{parser::Parser, tokenizer::{Rational, Token, Tokenizer}};
 
 
 
@@ -44,4 +46,30 @@ pub fn tokenizer() {
 
 
 
+}
+
+#[test]
+pub fn algebraic_addition() {
+    let input = "a + a";
+    assert_eq!(format!("{}", expression(input)), "2 * a")
+}
+
+#[test]
+pub fn algebraic_multiplication() {
+    let input = "a * a";
+    assert_eq!(format!("{}", expression(input)), "a^2")
+}
+
+#[test]
+pub fn algebraic_division() {
+    let input = "a / a";
+    assert_eq!(format!("{}", expression(input)), "1")
+}
+
+#[cfg(test)]
+fn expression(input: &str) -> Expr {
+    let mut tokenizer = Tokenizer::new(input);
+    let tokens = tokenizer.tokenize();
+    let mut parser = Parser::new(tokens);
+    parser.parse_expression().unwrap().simplify()
 }

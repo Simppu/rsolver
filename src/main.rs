@@ -2,28 +2,23 @@ use std::collections::HashMap;
 
 use rsolver::tokenizer::Tokenizer;
 use rsolver::parser::{ Parser};
-use rsolver::Expr;
+use rsolver::{evaluate_expr, evaluate_expr1, Expr};
 
 
 
 
 fn main() {
     // Example usage:
-    let i = "a + b * c";
+    let i = "1-2";
     let mut to = Tokenizer::new(i);
 
     let r = to.tokenize();
 
-    println!("{:?}", r);
-    let expr = Expr::Add(vec![
-        Expr::Symbol("a".to_string()),
-        Expr::Symbol("b".to_string()),
-        Expr::Symbol("a".to_string()),
-    ]);
+    
+    
     let mut pars = Parser::new(r);
 
     let e = pars.parse_expression().unwrap();
-
-    println!("{:?}", e.simplify());
-    println!("{}", expr.simplify());
+    
+    println!("{}", evaluate_expr1(e.simplify()));
 }

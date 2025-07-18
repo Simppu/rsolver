@@ -193,24 +193,50 @@ impl<'a> Tokenizer<'a> {
 
 
     fn read_number(&mut self, first: char) -> Result<Token, String> {
-        let mut s = String::new();
-        s.push(first);
+        let mut buffer = String::new();
+        let mut has_decimal = false;
+        buffer.push(first);
+        // Handle optional sign
+        
+        
+        // Read integer part
         while let Some(c) = self.peek() {
             match c {
-                '0'..='9' | '/' => s.push(self.next_char().unwrap()),
+                '0'..='9' => buffer.push(self.next_char().unwrap()),
+                '.' => {
+                    if has_decimal {
+                        return Err("Multiple decimal points in number".into());
+                    }
+                    has_decimal = true;
+                    buffer.push(self.next_char().unwrap());
+                }
                 _ => break,
             }
         }
         
-
-
-        if let Some(pos) = s.find('/') {
-            let num = s[..pos].parse::<i64>().map_err(|e| e.to_string())?;
-            let den = s[pos+1..].parse::<i64>().map_err(|e| e.to_string())?;
-            Ok(Token::Number(Rational::new(num, den)))
+        // Validate we got at least one digit
+        if buffer.is_empty() || buffer == "-" {
+            return Err("Invalid numeric format".into());
+        }
+        
+        // Convert to rational number
+        if has_decimal {
+            // Parse as decimal
+            let parts: Vec<&str> = buffer.split('.').collect();
+            let integer_part = parts[0].parse::<i64>().map_err(|e| e.to_string())?;
+            let decimal_part = parts[1];
+            let decimal_digits = decimal_part.len() as u32;
+            let denominator = 10i64.pow(decimal_digits);
+            let numerator = integer_part * denominator + 
+                decimal_part.parse::<i64>().map_err(|e| e.to_string())?;
+            
+            Ok(Token::Number(Rational::new(numerator, denominator)))
         } else {
-            let num = s.parse::<i64>().map_err(|e| e.to_string())?;
-            Ok(Token::Number(Rational::new(num, 1)))
+            // Regular integer
+            Ok(Token::Number(Rational::new(
+                buffer.parse::<i64>().map_err(|e| e.to_string())?,
+                1
+            )))
         }
     }
 
