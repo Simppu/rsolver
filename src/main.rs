@@ -9,7 +9,7 @@ use rsolver::{evaluate_expr, evaluate_expr1, Expr};
 
 fn main() {
     // Example usage:
-    let i = "1-2";
+    let i = "1/((1-1)) + a";
     let mut to = Tokenizer::new(i);
 
     let r = to.tokenize();

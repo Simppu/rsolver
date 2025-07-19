@@ -6,6 +6,13 @@ pub mod parser;
 pub mod tokenizer;
 pub mod tests;
 
+#[derive(Debug, PartialEq, Clone, Hash, Eq, Copy)]
+pub enum Errors {
+    SyntaxError,
+    Undefined,
+    False
+}
+
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub enum Expr {
@@ -16,11 +23,13 @@ pub enum Expr {
     Mul(Vec<Expr>),
     Div(Box<Expr>, Box<Expr>),
     Pow(Box<Expr>, Box<Expr>),
-    Neg(Box<Expr>)
+    Neg(Box<Expr>),
+    Err(Errors)
 }
 
 pub fn evaluate_expr(expr: Expr) -> Expr {
     match &expr {
+        Expr::Err(e) => Expr::Err(*e),
         Expr::Number(rational) => Expr::Number(rational.clone()),
         Expr::Symbol(s) => Expr::Symbol(s.clone()),
         Expr::Add(exprs) => {
@@ -115,15 +124,29 @@ pub fn evaluate_expr(expr: Expr) -> Expr {
 }
 pub fn evaluate_expr1(expr: Expr) -> Expr {
     match expr {
-        Expr::Number(rational) => Expr::Number(rational),
+        Expr::Err(e) => Expr::Err(e),
+        Expr::Number(rational) => {
+            if rational.denominator == 0 {
+                Expr::Err(Errors::Undefined)
+            } else {Expr::Number(rational)}
+        },
         Expr::Symbol(s) => Expr::Symbol(s),
         Expr::Add(exprs) => {
             let mut sum = Rational::new(0, 1);
             let mut symbols = HashMap::new();
             let mut other_terms = Vec::new();
             
+            for ex in &exprs {
+                if let Expr::Err(e) = ex {
+                    return Expr::Err(*e);
+                }
+            }
+
             for expr in exprs {
-                match evaluate_expr(expr) {
+                match evaluate_expr1(expr) {
+                    Expr::Err(e) => {
+                        return Expr::Err(e);
+                    }
                     Expr::Number(r) => sum = sum + r,
                     Expr::Symbol(s) => {
                         *symbols.entry(s).or_insert(0) += 1;
@@ -136,10 +159,10 @@ pub fn evaluate_expr1(expr: Expr) -> Expr {
                             }
                             
                         } else {
-                            other_terms.push(Expr::Mul(factors));
+                            other_terms.push(evaluate_expr1(Expr::Mul(factors).simplify()));
                         }
                     },
-                    other => other_terms.push(other),
+                    other => other_terms.push(evaluate_expr1(other)),
                 }
             }
             
@@ -172,18 +195,20 @@ pub fn evaluate_expr1(expr: Expr) -> Expr {
             }
         },
         Expr::Sub(a, b) => {
-            let a_simpl = evaluate_expr(*a);
-            let b_simpl = evaluate_expr(*b);
+            let a_simpl = evaluate_expr1(*a);
+            let b_simpl = evaluate_expr1(*b);
             
             match (a_simpl, b_simpl) {
+                (Expr::Err(e), _) => {Expr::Err(e)},
                 (Expr::Number(n1), Expr::Number(n2)) => Expr::Number(n1 - n2),
                 (a, Expr::Number(n)) if n == Rational::new(0, 1) => a,
                 (Expr::Add(terms), b) => {
                     // Distribute subtraction: (a + b + c) - d → a + b + c - d
                     let mut new_terms = terms;
                     new_terms.push(Expr::Neg(Box::new(b)));
-                    evaluate_expr(Expr::Add(new_terms))
+                    evaluate_expr1(Expr::Add(new_terms))
                 },
+                
                 (a, b) => Expr::Sub(Box::new(a), Box::new(b)),
             }
         },
@@ -192,8 +217,15 @@ pub fn evaluate_expr1(expr: Expr) -> Expr {
             let mut symbols = HashMap::new();
             let mut other_factors = Vec::new();
             
+            for ex in &exprs {
+                if let Expr::Err(e) = ex {
+                    return Expr::Err(*e);
+                }
+            }
+
+
             for expr in exprs {
-                match evaluate_expr(expr) {
+                match evaluate_expr1(expr) {
                     Expr::Number(r) => product = product * r,
                     Expr::Symbol(s) => {
                         *symbols.entry(s).or_insert(0) += 1;
@@ -241,9 +273,15 @@ pub fn evaluate_expr1(expr: Expr) -> Expr {
             }
         },
         Expr::Div(a, b) => {
-            let a_simpl = evaluate_expr(*a);
-            let b_simpl = evaluate_expr(*b);
+            let a_simpl = evaluate_expr1(*a);
+            let b_simpl = evaluate_expr1(*b);
             
+            if let Expr::Number(n) = b_simpl.clone() {
+                if n.numerator == 0 || n.denominator == 0 {
+                    return Expr::Err(Errors::Undefined);
+                }
+            }
+
             match (a_simpl, b_simpl) {
                 (Expr::Number(n), Expr::Number(m)) => Expr::Number(n / m),
                 (a, Expr::Number(n)) if n == Rational::new(1, 1) => a,
@@ -262,7 +300,7 @@ pub fn evaluate_expr1(expr: Expr) -> Expr {
             //}
         },
         Expr::Neg(a) => {
-            match evaluate_expr(*a) {
+            match evaluate_expr1(*a) {
                 Expr::Number(n) => Expr::Number(-n),
                 a_simpl => Expr::Neg(Box::new(a_simpl)),
             }
@@ -412,7 +450,13 @@ impl Expr {
                     Expr::Div(numerator, denominator) => {
                         let num = numerator.simplify();
                         let den = denominator.simplify();
-        
+                        
+                        if let Expr::Number(n) = den.clone() {
+                            if n.numerator == 0 || n.denominator == 0 {
+                                return Expr::Err(Errors::Undefined);
+                            }
+                        }
+
                         // Case 1: a/a → 1
                         if num == den {
                             return Expr::Number(Rational::new(1, 1));
@@ -546,6 +590,14 @@ use std::fmt;
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Expr::Err(e) => {
+                let e_msg = match *e {
+                    Errors::SyntaxError => "Syntax Error",
+                    Errors::Undefined => "Undefined",
+                    Errors::False => "False",
+                };
+                write!(f, "{}", e_msg)
+            }
             Expr::Number(r) => write!(f, "{}", r),
             Expr::Symbol(s) => write!(f, "{}", s),
             
